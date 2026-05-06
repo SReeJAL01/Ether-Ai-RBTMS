@@ -91,4 +91,4 @@ The project uses hardened Firestore security rules to protect user data. Ensure 
 
 ---
 
-Built with ❤️ by the EtherAi Team.
+Built with ❤️ by SReeJAL.
