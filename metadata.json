@@ -1,0 +1,6 @@
+{
+  "name": "EtherAi",
+  "description": "Collaborative team task manager with real-time updates and RBAC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

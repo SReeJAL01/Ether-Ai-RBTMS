@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin' ||
+        request.auth.token.email == 'sreejal2003@gmail.com'
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Users ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'role']) &&
+             data.keys().size() <= 7 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.role in ['Admin', 'Member'];
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isSignedIn() && (
+                        // Owner can update everything EXCEPT role, UNLESS they are the bootstrap admin
+                        (isOwner(userId) && isValidUser(request.resource.data) && (
+                          request.resource.data.role == resource.data.role || 
+                          request.auth.token.email == 'sreejal2003@gmail.com'
+                        )) ||
+                        // Admin can update anyone
+                        (isAdmin() && isValidUser(request.resource.data))
+                      ));
+    }
+
+    // --- Projects ---
+    function isValidProject(data) {
+      return data.keys().hasAll(['title', 'createdBy', 'createdAt']) &&
+             data.keys().size() <= 10 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.createdBy == request.auth.uid &&
+             data.createdAt == request.time;
+    }
+
+    match /projects/{projectId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidProject(request.resource.data);
+      allow update: if isAdmin() && 
+                      request.resource.data.keys().hasAll(['title', 'createdBy', 'createdAt']) &&
+                      request.resource.data.createdBy == resource.data.createdBy &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+    }
+
+    // --- Tasks ---
+    function isValidTask(data) {
+      return data.keys().hasAll(['title', 'status', 'priority', 'projectId', 'createdAt']) &&
+             data.keys().size() <= 15 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.status in ['To Do', 'In Progress', 'Done'] &&
+             data.priority in ['Low', 'Medium', 'High'] &&
+             data.projectId is string &&
+             data.createdAt == request.time;
+    }
+
+    match /tasks/{taskId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidTask(request.resource.data);
+      allow update: if isSignedIn() && (
+                      // Helper for validating task update structure (without request.time for createdAt)
+                      request.resource.data.keys().hasAll(['title', 'status', 'priority', 'projectId', 'createdAt']) &&
+                      request.resource.data.createdAt == resource.data.createdAt && (
+                        // Only allow specific changes for members
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+                        isAdmin()
+                      )
+                    );
+      allow delete: if isAdmin();
+    }
+  }
+}
